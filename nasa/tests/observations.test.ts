@@ -1,0 +1,13 @@
+﻿import assert from 'node:assert/strict';
+import { sampleDataset, validateDataset, combineImages, imageOperation } from '../lib/observations.ts';
+const data = sampleDataset();
+assert.equal(validateDataset(data).observations.length, 612);
+const a = data.observations[0], b = data.observations[102];
+assert.equal(combineImages([a, b])!.pixels[0], a.pixels[0] + b.pixels[0]);
+assert(imageOperation(a, a, 'subtract').pixels.every(v => v === 0));
+assert.deepEqual(imageOperation(a, b, 'add').pixels, combineImages([a,b])!.pixels);
+assert.throws(() => imageOperation(a, {...b,width:31}, 'subtract'));
+assert.throws(() => validateDataset({...data, ra:360}));
+assert.throws(() => validateDataset({...data,observations:[a,a]}));
+assert.throws(() => validateDataset({...data,observations:[{...a,pixels:[NaN]}]}));
+console.log('PASS: sample dataset validation, addition, subtraction, alignment and invalid uploads.');
