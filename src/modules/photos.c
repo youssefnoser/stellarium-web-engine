@@ -19,6 +19,8 @@ typedef struct photo {
     // Note: we could have more control, like rendering both the pic and
     // the shape at the same time.
     bool        render_shape;
+    // SPHEREx spike: skip the fade so a blink switches frames instantly.
+    bool        instant;
 
     // calibration value as returned by astrometry.net api, but with the
     // units changed to rad.
@@ -55,8 +57,18 @@ static json_value *photo_fn_calibration(obj_t *obj, const attribute_t *attr,
     json_value *val;
     double orientation, pixscale, ra, dec;
 
-    val = args->u.array.length ? args->u.array.values[0] : NULL;
-    if (val) {
+    // SPHEREx spike fix: setters receive the bare JSON object (from
+    // obj_create_ or a JS property set), not an array.  Reading it as an
+    // array returned garbage and left the calibration at zero.
+    val = NULL;
+    if (args && args->type == json_object) {
+        val = args;
+        if (json_get_attr(val, "swe_", 0)) val = json_get_attr(val, "v", 0);
+    } else if (args && args->type == json_array && args->u.array.length) {
+        val = args->u.array.values[0];
+    }
+    if (val && val->type == json_object) {
+        photo->mat[3][3] = 0; // force the projection to be recomputed
         orientation = json_get_attr_f(val, "orientation", 0);
         pixscale = json_get_attr_f(val, "pixscale", 0);
         ra = json_get_attr_f(val, "ra", 0);
@@ -80,8 +92,11 @@ static json_value *photo_fn_calibration(obj_t *obj, const attribute_t *attr,
 // Project from uv to the sphere.
 static void photo_map(const uv_map_t *map, const double v[2], double out[4])
 {
+    // SPHEREx spike fix: do NOT normalise here.  The transform first
+    // recentres (-0.5) and scales uv to radians, then rotates the pole to
+    // (ra, dec).  Normalising before that warped the image into a skewed
+    // quad.  For fields of a few arcmin the vector stays ~unit length.
     double p[4] = {v[0], v[1], 1.0, 1.0};
-    vec3_normalize(p, p);
     vec4_copy(p, out);
 }
 
@@ -92,7 +107,10 @@ static int photo_render(obj_t *obj, const painter_t *painter)
     uv_map_t map = {};
     painter_t painter2 = *painter;
 
-    fader_update(&photo->visible, 0.06);
+    if (photo->instant)
+        photo->visible.value = photo->visible.target ? 1.0 : 0.0;
+    else
+        fader_update(&photo->visible, 0.06);
     painter2.color[3] *= photo->visible.value;
     if (painter2.color[3] == 0.0) return 0;
 
@@ -113,13 +131,16 @@ static int photo_render(obj_t *obj, const painter_t *painter)
     map.transf = &photo->mat;
     map.map = photo_map;
 
+    // SPHEREx spike fix: catalogue/WCS coordinates are astrometric, the same
+    // frame HiPS surveys use.  FRAME_ICRF here means apparent (aberrated)
+    // and put the photo ~20 arcsec off the survey.
     if (!photo->render_shape) {
         painter_set_texture(&painter2, PAINTER_TEX_COLOR, photo->img, NULL);
-        paint_quad(&painter2, FRAME_ICRF, &map, 4);
+        paint_quad(&painter2, FRAME_ASTROM, &map, 4);
     } else {
-        paint_quad_contour(&painter2, FRAME_ICRF, &map, 8, 15);
+        paint_quad_contour(&painter2, FRAME_ASTROM, &map, 8, 15);
         painter2.color[3] *= 0.25;
-        paint_quad(&painter2, FRAME_ICRF, &map, 8);
+        paint_quad(&painter2, FRAME_ASTROM, &map, 8);
     }
 
     return 0;
@@ -138,6 +159,7 @@ static obj_klass_t photo_klass = {
         PROPERTY(url, TYPE_STRING_PTR, .fn = photo_fn_url),
         PROPERTY(calibration, TYPE_JSON, .fn = photo_fn_calibration),
         PROPERTY(render_shape, TYPE_BOOL, MEMBER(photo_t, render_shape)),
+        PROPERTY(instant, TYPE_BOOL, MEMBER(photo_t, instant)),
         // Default properties.
         PROPERTY(radec),
         {}

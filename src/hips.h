@@ -67,6 +67,9 @@ struct hips {
     int         error; // Set if an error occurred.
     char        *label; // Short label used in the progressbar.
     int         frame; // FRAME_ICRF | FRAME_ASTROM | FRAME_OBSERVED.
+    // HiPS cube frame index.  0 = first frame (tiles have no suffix),
+    // N > 0 = tiles named NpixXXX_N.ext (HiPS 1.4 cube convention).
+    int         cube_frame;
     uint32_t    hash; // Hash of the url.
 
     // Stores the allsky image if available.

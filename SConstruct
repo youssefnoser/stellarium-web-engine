@@ -108,14 +108,12 @@ env.Append(CCFLAGS='-DNO_LIBCURL')
 
 # All the emscripten runtime functions we use.
 # Needed since emscripten 1.37.
+# SPHEREx spike: updated for emscripten 7 (ALLOC_NORMAL, allocate and
+# writeAsciiToMemory no longer exist; _malloc/_free move to EXPORTED_FUNCTIONS).
 extra_exported = [
-    'ALLOC_NORMAL',
     'GL',
     'UTF8ToString',
-    '_free',
-    '_malloc',
     'addFunction',
-    'allocate',
     'ccall',
     'cwrap',
     'getValue',
@@ -124,7 +122,6 @@ extra_exported = [
     'removeFunction',
     'setValue',
     'stringToUTF8',
-    'writeAsciiToMemory',
     'writeArrayToMemory',
 ]
 extra_exported = ','.join("'%s'" % x for x in extra_exported)
@@ -138,12 +135,11 @@ flags = [
          '--pre-js', 'src/js/geojson.js',
          '--pre-js', 'src/js/canvas.js',
          # '-s', 'STRICT=1', # Note: to put back once we switch to emsdk 2
-         '-s', 'RESERVED_FUNCTION_POINTERS=10',
          '-O3',
-         '-s', 'USE_WEBGL2=1',
-         '-s', 'NO_EXIT_RUNTIME=1',
-         '-s', '"EXPORTED_FUNCTIONS=[]"',
-         '-s', '"EXTRA_EXPORTED_RUNTIME_METHODS=[%s]"' % extra_exported,
+         '-s', 'MAX_WEBGL_VERSION=2',
+         '-s', 'EXIT_RUNTIME=0',
+         '-s', '"EXPORTED_FUNCTIONS=[\'_malloc\',\'_free\']"',
+         '-s', '"EXPORTED_RUNTIME_METHODS=[%s]"' % extra_exported,
          '-s', 'FILESYSTEM=0'
         ]
 
@@ -163,7 +159,11 @@ if env['mode'] == 'debug':
 if env['es6']:
     flags += ['-s', 'EXPORT_ES6=1', '-s', 'USE_ES6_IMPORT_META=0']
 
-env.Append(CCFLAGS=['-DNO_ARGP', '-DGLES2 1'] + flags)
+# Link-only settings must not reach the compile step (emcc 7 rejects them
+# under -Werror), so only -O3 goes to CCFLAGS.
+env.Append(CCFLAGS=['-DNO_ARGP', '-DGLES2 1', '-O3',
+                    # Newer clang flags old K&R C in bundled zlib etc.
+                    '-Wno-error', '-Wno-deprecated-non-prototype'])
 env.Append(LINKFLAGS=flags)
 env.Append(LIBS=['GL'])
 

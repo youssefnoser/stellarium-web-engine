@@ -8,6 +8,7 @@
  */
 
 #include "swe.h"
+#include <zlib.h> // For crc32 (per-frame tile cache key).
 
 // HIPS survey support.
 
@@ -15,7 +16,34 @@ typedef struct dss {
     obj_t       obj;
     fader_t     visible;
     hips_t      *hips;
+    char        *url;       // Survey root, kept so a frame change can reload.
+    int         cube_frame; // HiPS cube frame (SPHEREx spike: wavelength).
 } dss_t;
+
+// SPHEREx spike: select the HiPS cube frame.  Changing it recreates the
+// survey so the tile cache never mixes frames.
+static json_value *dss_fn_frame(obj_t *obj, const attribute_t *attr,
+                                const json_value *args)
+{
+    dss_t *dss = (void*)obj;
+    int frame;
+    // Getters pass NULL; setters pass the bare JSON value (0 is valid).
+    if (args && args->type != json_null) {
+        args_get(args, TYPE_INT, &frame);
+        if (frame != dss->cube_frame && dss->url) {
+            dss->cube_frame = frame;
+            hips_delete(dss->hips);
+            dss->hips = hips_create(dss->url, 0, NULL);
+            dss->hips->cube_frame = frame;
+            // The global tile cache is keyed by a hash of the URL; give each
+            // frame its own key or the old frame's tiles are reused.
+            dss->hips->hash = crc32(dss->hips->hash, (const void*)&frame,
+                                    sizeof(frame));
+        }
+        dss->cube_frame = frame;
+    }
+    return args_value_new(TYPE_INT, dss->cube_frame);
+}
 
 static int dss_init(obj_t *obj, json_value *args)
 {
@@ -99,7 +127,12 @@ static int dss_add_data_source(obj_t *obj, const char *url, const char *key)
 {
     dss_t *dss = (dss_t*)obj;
     hips_delete(dss->hips);
+    free(dss->url);
+    dss->url = strdup(url);
     dss->hips = hips_create(url, 0, NULL);
+    dss->hips->cube_frame = dss->cube_frame;
+    dss->hips->hash = crc32(dss->hips->hash, (const void*)&dss->cube_frame,
+                            sizeof(dss->cube_frame));
     return 0;
 }
 
@@ -118,6 +151,7 @@ static obj_klass_t dss_klass = {
     .add_data_source = dss_add_data_source,
     .attributes = (attribute_t[]) {
         PROPERTY(visible, TYPE_BOOL, MEMBER(dss_t, visible.target)),
+        PROPERTY(frame, TYPE_INT, .fn = dss_fn_frame),
         {}
     },
 };
