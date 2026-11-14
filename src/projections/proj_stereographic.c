@@ -91,7 +91,9 @@ static const projection_klass_t proj_stereographic_klass = {
     .name           = "stereographic",
     .id             = PROJ_STEREOGRAPHIC,
     .max_fov        = 360. * DD2R,
-    .max_ui_fov     = 185. * DD2R,
+    // SPHEREx: past about 105 deg the stereographic stretch dominates and panning
+    // feels like the sky bulges outwards; the tool needs no wider view (stock: 185).
+    .max_ui_fov     = 105. * DD2R,
     .init           = proj_stereographic_init,
     .project        = proj_stereographic_project,
     .backward       = proj_stereographic_backward,

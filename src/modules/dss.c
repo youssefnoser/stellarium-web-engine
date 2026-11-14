@@ -54,41 +54,20 @@ static int dss_init(obj_t *obj, json_value *args)
 
 static int dss_render(obj_t *obj, const painter_t *painter)
 {
-    double visibility;
     const dss_t *dss = (const dss_t*)obj;
     painter_t painter2 = *painter;
-    double lum, c, sep, ratio;
+    double sep;
     int render_order, split_order;
 
     if (dss->visible.value == 0.0) return 0;
     if (!dss->hips) return 0;
 
-    // For large FOV we use the milky way texture
-    visibility = smoothstep(20 * DD2R, 10 * DD2R, core->fov);
+    // SPHEREx: this survey is data, not a night-sky simulation. Stock Stellarium
+    // fades the survey out between 20 and 10 degrees of field of view (a Milky
+    // Way texture takes over) and scales it by an eye-adaptation model that is
+    // applied to colour and alpha alike, which left about 2% at 15 degrees.
+    // Draw it at full strength at every zoom and let `visible` fade it.
     painter2.color[3] *= dss->visible.value;
-
-    // Adjust for eye adaptation.
-    // 0.02 cd/m2 luminance should more or less match the brightest
-    // non-saturated pixels brightness inside the DSS images.
-    lum = 0.02;
-    lum *= core->telescope.light_grasp;
-    lum /= pow(core->telescope.magnification, 2);
-    c = tonemapper_map(&core->tonemapper, lum);
-    // Ad-hoc integration of the Bortle scale
-    c *= 1.0 / (6.0 / 8.0) * (9.0 - core->bortle_index) / 8.0;
-    c = fmax(0, c);
-    c *= visibility;
-    c = fmin(c, 1.2);
-
-    // limit mag = 4 -> no dss
-    // limit mag > 14 -> 100% dss
-    if (core->display_limit_mag < 14.0) {
-        ratio = (14.0 - core->display_limit_mag) / 10;
-        ratio = clamp(ratio, 0.0, 1.0);
-        c *= 1.0 - ratio;
-    }
-
-    vec4_mul(c, painter2.color, painter2.color);
 
     // Don't even try to display if the brightness is too low
     if (painter2.color[3] < 3.0 / 255) return 0;

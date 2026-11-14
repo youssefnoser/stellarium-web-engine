@@ -80,10 +80,14 @@ static int on_click(const gesture_t *gest, void *user)
 static int on_pinch(const gesture_t *gest, void *user)
 {
     static double start_fov = 0;
+    projection_t proj;
     if (gest->state == GESTURE_BEGIN) {
         start_fov = core->fov;
     }
-    core->fov = start_fov / gest->pinch;
+    // Same limits as the mouse wheel (movements_on_zoom).
+    core_get_proj(&proj);
+    core->fov = clamp(start_fov / gest->pinch, CORE_MIN_FOV,
+                      proj.klass->max_ui_fov);
     module_changed((obj_t*)core, "fov");
     return 0;
 }
